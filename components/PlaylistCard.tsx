@@ -8,7 +8,7 @@ interface PlaylistCardProps {
   isPlaying?: boolean;
   onPlayAll?: () => void;
   onPlaySong?: (index: number) => void;
-  onRemoveSong?: (index: number, title: string, artist: string) => void;
+  onRemoveSong?: (index: number) => void;
   onSave?: () => void;
   isSaved?: boolean;
 }
@@ -150,11 +150,13 @@ export default function PlaylistCard({
 
               {onRemoveSong && (
                 <button
-                  onClick={() => onRemoveSong(i, song.title, song.artist)}
+                  type="button"
+                  onClick={() => onRemoveSong(i)}
                   className="mt-1 w-5 h-5 flex items-center justify-center shrink-0
-                    text-zinc-700 hover:text-red-400 opacity-0 group-hover:opacity-100
-                    transition-all duration-200"
+                    text-zinc-600 hover:text-red-400 sm:opacity-40 sm:group-hover:opacity-100
+                    sm:focus-visible:opacity-100 opacity-100 transition-all duration-200"
                   title="Remove song"
+                  aria-label={`Remove "${song.title}" from playlist`}
                 >
                   <svg
                     width="12"

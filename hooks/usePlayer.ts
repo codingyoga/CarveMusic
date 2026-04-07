@@ -1,19 +1,48 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Playlist, Song } from "@/lib/types";
+import { carveDebug } from "@/lib/carveDebugLog";
+
+function firstPlayableIndex(songs: Song[], start: number): number {
+  for (let i = start; i < songs.length; i++) {
+    if (songs[i]?.videoId) return i;
+  }
+  for (let i = Math.min(start, songs.length - 1); i >= 0; i--) {
+    if (songs[i]?.videoId) return i;
+  }
+  return 0;
+}
 
 export function usePlayer() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+  const currentIndexRef = useRef(0);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  useEffect(() => {
+    if (songs.length === 0) return;
+    if (!songs[currentIndex]?.videoId) {
+      const p = firstPlayableIndex(songs, currentIndex);
+      if (p !== currentIndex) setCurrentIndex(p);
+    }
+  }, [songs, currentIndex]);
 
   const resolveAndPlay = useCallback(
     async (playlist: Playlist, startIndex: number = 0) => {
       setIsResolving(true);
 
       try {
+        carveDebug("client.youtube.resolve", {
+          step: "fetch POST /api/youtube/search",
+          trackCount: playlist.songs.length,
+        });
+
         const res = await fetch("/api/youtube/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -23,18 +52,27 @@ export function usePlayer() {
         if (!res.ok) throw new Error("YouTube search failed");
 
         const data = await res.json();
-        const resolved: Song[] = data.songs.filter(
-          (s: Song) => s.videoId !== null
-        );
+        const all: Song[] = data.songs;
 
-        if (resolved.length === 0) {
+        const resolved = all.filter((s) => s.videoId).length;
+        carveDebug("client.youtube.response", {
+          resolvedVideoIds: resolved,
+          unresolved: all.length - resolved,
+        });
+
+        const anyPlayable = all.some((s: Song) => s.videoId);
+        if (!anyPlayable) {
           console.error("No songs found on YouTube");
           return;
         }
 
-        setSongs(resolved);
-        const safeIndex = Math.min(startIndex, resolved.length - 1);
-        setCurrentIndex(safeIndex);
+        setSongs(all);
+        const safeStart = Math.min(
+          Math.max(0, startIndex),
+          Math.max(0, all.length - 1)
+        );
+        const playableIdx = firstPlayableIndex(all, safeStart);
+        setCurrentIndex(playableIdx);
         setIsPlaying(true);
       } catch (error) {
         console.error("Failed to resolve songs:", error);
@@ -51,18 +89,27 @@ export function usePlayer() {
 
   const next = useCallback(() => {
     setCurrentIndex((prev) => {
-      if (prev < songs.length - 1) return prev + 1;
+      for (let i = prev + 1; i < songs.length; i++) {
+        if (songs[i]?.videoId) return i;
+      }
       return prev;
     });
-  }, [songs.length]);
+  }, [songs]);
 
   const prev = useCallback(() => {
-    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : 0));
-  }, []);
+    setCurrentIndex((prev) => {
+      for (let i = prev - 1; i >= 0; i--) {
+        if (songs[i]?.videoId) return i;
+      }
+      return prev;
+    });
+  }, [songs]);
 
   const onTrackEnd = useCallback(() => {
     setCurrentIndex((prev) => {
-      if (prev < songs.length - 1) return prev + 1;
+      for (let i = prev + 1; i < songs.length; i++) {
+        if (songs[i]?.videoId) return i;
+      }
       setIsPlaying(false);
       return prev;
     });
@@ -70,13 +117,41 @@ export function usePlayer() {
 
   const jumpTo = useCallback(
     (index: number) => {
-      if (index >= 0 && index < songs.length) {
-        setCurrentIndex(index);
+      if (index < 0 || index >= songs.length) return;
+      const playable = firstPlayableIndex(songs, index);
+      if (songs[playable]?.videoId) {
+        setCurrentIndex(playable);
         setIsPlaying(true);
       }
     },
-    [songs.length]
+    [songs]
   );
+
+  /** Removes track at index; indices align with playlist rows (including rows without videoId). */
+  const removeSongAt = useCallback((index: number) => {
+    setSongs((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
+      const next = prev.filter((_, j) => j !== index);
+      const ci = currentIndexRef.current;
+      let newCi = ci;
+      if (index < ci) newCi = ci - 1;
+      else if (index === ci) {
+        if (next.length === 0) newCi = 0;
+        else if (index < prev.length - 1)
+          newCi = Math.min(index, next.length - 1);
+        else newCi = Math.max(0, index - 1);
+      }
+      const playable = next.length
+        ? firstPlayableIndex(next, Math.min(newCi, next.length - 1))
+        : 0;
+      queueMicrotask(() => {
+        currentIndexRef.current = playable;
+        setCurrentIndex(playable);
+        if (!next.some((s) => s.videoId)) setIsPlaying(false);
+      });
+      return next;
+    });
+  }, []);
 
   return {
     songs,
@@ -89,5 +164,6 @@ export function usePlayer() {
     prev,
     onTrackEnd,
     jumpTo,
+    removeSongAt,
   };
 }

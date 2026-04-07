@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getChatResponse } from "@/lib/ai";
+import { getChatResponse, getChatResponseFromPool } from "@/lib/ai";
 import {
-  searchJioSaavn,
-  multiSearchJioSaavn,
-  formatSongsForContext,
-} from "@/lib/jiosaavn";
+  playlistSongsForDebugLog,
+  poolSongsForDebugLog,
+  truncateForLog,
+} from "@/lib/carveDebugLog";
+import { carveDebugServer } from "@/lib/carveDebugLogFile";
+import { multiSearchJioSaavn, formatSongsForContext } from "@/lib/jiosaavn";
+import { buildCuratorIntentSection } from "@/lib/curatorIntent";
+import {
+  buildMoodSearchQueries,
+  buildMoodSearchQuery,
+  detectLanguage,
+  isLikelyEraOrDecadeNotArtist,
+  isLikelyMoodDescriptorNotArtist,
+  isScenarioOnlyArtistFalsePositive,
+} from "@/lib/moodSearchQuery";
+import type { JioSaavnSong } from "@/lib/jiosaavn";
+import {
+  capSongPool,
+  MIN_POOL_FOR_STRICT,
+} from "@/lib/songPoolPlaylist";
 
 const MCQ_OPTIONS = new Set([
   "start",
@@ -48,65 +64,17 @@ function extractArtistName(text: string): string | null {
       const name = match[1]
         .replace(/\b(romantic|sad|happy|best|old|new|classic|songs?|hits?|from|kannada|hindi|tamil|telugu|english)\b/gi, "")
         .trim();
-      if (name.length > 2) return name;
-    }
-  }
-  return null;
-}
-
-function detectLanguage(
-  messages: { role: string; content: string }[]
-): string | null {
-  const languages = ["kannada", "hindi", "tamil", "telugu", "english"];
-  for (const m of [...messages].reverse()) {
-    const lower = m.content.toLowerCase();
-    for (const lang of languages) {
-      if (lower.includes(lang)) return lang;
-    }
-  }
-  return null;
-}
-
-function buildMoodSearchQuery(
-  messages: { role: string; content: string }[]
-): string {
-  const userMessages = messages
-    .filter((m) => m.role === "user")
-    .map((m) => m.content.toLowerCase());
-
-  const keywords: string[] = [];
-  const lang = detectLanguage(messages);
-  if (lang) keywords.push(lang);
-
-  const lastUser = userMessages[userMessages.length - 1] || "";
-  const cleanedLast = lastUser
-    .replace(/\[remove\]/i, "")
-    .replace(/^(give me|play|i want|suggest|find)\s+/i, "")
-    .trim();
-
-  if (cleanedLast.length > 3 && !MCQ_OPTIONS.has(cleanedLast)) {
-    keywords.push(cleanedLast);
-  }
-
-  const moodMap: Record<string, string> = {
-    happy: "upbeat cheerful",
-    sad: "melancholy emotional",
-    energetic: "upbeat dance",
-    calm: "peaceful soothing",
-    nostalgic: "classic old",
-    angry: "intense powerful",
-  };
-
-  for (const msg of userMessages) {
-    for (const [mood, searchTerms] of Object.entries(moodMap)) {
-      if (msg === mood) {
-        keywords.push(searchTerms);
-        break;
+      if (
+        name.length > 2 &&
+        !isScenarioOnlyArtistFalsePositive(name) &&
+        !isLikelyMoodDescriptorNotArtist(name) &&
+        !isLikelyEraOrDecadeNotArtist(name)
+      ) {
+        return name;
       }
     }
   }
-
-  return keywords.join(" ").trim();
+  return null;
 }
 
 function shouldSearch(content: string): boolean {
@@ -134,7 +102,18 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    let songContext: string | undefined;
+    const lastUser = [...chatMessages].reverse().find((m) => m.role === "user");
+    carveDebugServer("api.chat.request", {
+      step: "POST /api/chat",
+      messageCount: chatMessages.length,
+      roles: chatMessages.map((m) => m.role),
+      lastUserPreview: lastUser
+        ? truncateForLog(lastUser.content, 200)
+        : null,
+    });
+
+    let poolSongs: JioSaavnSong[] = [];
+    let isArtistPath = false;
 
     const lastMsg = chatMessages[chatMessages.length - 1];
     if (lastMsg && shouldSearch(lastMsg.content)) {
@@ -142,6 +121,7 @@ export async function POST(req: NextRequest) {
       const lang = detectLanguage(chatMessages);
 
       if (artistName) {
+        isArtistPath = true;
         const queries = [
           artistName,
           lang ? `${artistName} ${lang}` : null,
@@ -149,25 +129,147 @@ export async function POST(req: NextRequest) {
           lang ? `${artistName} ${lang} hits` : null,
         ].filter(Boolean) as string[];
 
-        console.log(`Artist detected: "${artistName}", searching JioSaavn with:`, queries);
+        carveDebugServer("api.chat.jiosaavn", {
+          step: "JioSaavn lookup (artist)",
+          artistName,
+          queries,
+        });
 
         const songs = await multiSearchJioSaavn(queries);
-        if (songs.length > 0) {
-          songContext = formatSongsForContext(songs, true);
-          console.log(`Found ${songs.length} verified songs for "${artistName}"`);
-        }
+        poolSongs = capSongPool(songs);
+        carveDebugServer("api.chat.jiosaavn.result", {
+          verifiedSongCount: songs.length,
+          poolSize: poolSongs.length,
+        });
       } else {
-        const query = buildMoodSearchQuery(chatMessages);
-        if (query.length > 3) {
-          const songs = await searchJioSaavn(query);
-          if (songs.length > 0) {
-            songContext = formatSongsForContext(songs, false);
-          }
+        let moodQueries = buildMoodSearchQueries(chatMessages, (s) =>
+          MCQ_OPTIONS.has(s)
+        );
+        if (moodQueries.length === 0) {
+          const one = buildMoodSearchQuery(chatMessages, (s) =>
+            MCQ_OPTIONS.has(s)
+          );
+          if (one.length > 3) moodQueries = [one];
+        }
+
+        if (moodQueries.length > 0) {
+          carveDebugServer("api.chat.jiosaavn", {
+            step: "JioSaavn lookup (mood / multi-query)",
+            queries: moodQueries,
+          });
+          const songs = await multiSearchJioSaavn(moodQueries);
+          poolSongs = capSongPool(songs);
+          carveDebugServer("api.chat.jiosaavn.result", {
+            verifiedSongCount: songs.length,
+            poolSize: poolSongs.length,
+            queryCount: moodQueries.length,
+          });
         }
       }
+    } else {
+      carveDebugServer("api.chat.jiosaavn.skip", {
+        reason: lastMsg ? "query too short or MCQ-style" : "no last message",
+      });
     }
 
-    const aiResponse = await getChatResponse(chatMessages, songContext);
+    if (poolSongs.length > 0) {
+      carveDebugServer("api.chat.pool.tracks", {
+        step: "JioSaavn pool (catalog order; indices 1..n are strict-pool pick targets)",
+        ...poolSongsForDebugLog(poolSongs),
+      });
+    }
+
+    const curatorIntent = buildCuratorIntentSection(chatMessages);
+    carveDebugServer("api.chat.curatorIntent", {
+      step: "Structured intent for system prompt",
+      injected: Boolean(curatorIntent),
+      chars: curatorIntent?.length ?? 0,
+    });
+
+    let aiResponse: Record<string, unknown>;
+
+    if (poolSongs.length >= MIN_POOL_FOR_STRICT) {
+      carveDebugServer("api.chat.gemini", {
+        step: "Strict pool (index picks) → Gemini",
+        poolSize: poolSongs.length,
+      });
+      const strictResult = await getChatResponseFromPool(
+        chatMessages,
+        poolSongs,
+        curatorIntent,
+        isArtistPath
+      );
+      if (strictResult && strictResult.type === "playlist" && strictResult.playlist) {
+        aiResponse = strictResult;
+        carveDebugServer("api.chat.mode", { selection: "strict_pool" });
+      } else {
+        carveDebugServer("api.chat.mode", {
+          selection: "soft_fallback",
+          reason: "strict_pool_unmapped",
+        });
+        const songContext =
+          poolSongs.length > 0
+            ? formatSongsForContext(poolSongs, isArtistPath, false)
+            : undefined;
+        aiResponse = await getChatResponse(
+          chatMessages,
+          songContext,
+          curatorIntent
+        );
+      }
+    } else {
+      carveDebugServer("api.chat.gemini", {
+        step: "Soft mode → Gemini (small or empty pool)",
+        poolSize: poolSongs.length,
+      });
+      const songContext =
+        poolSongs.length > 0
+          ? formatSongsForContext(poolSongs, isArtistPath, false)
+          : undefined;
+      if (poolSongs.length > 0 && poolSongs.length < MIN_POOL_FOR_STRICT) {
+        carveDebugServer("api.chat.mode", {
+          selection: "soft_pool_small",
+          poolSize: poolSongs.length,
+        });
+      } else {
+        carveDebugServer("api.chat.mode", { selection: "soft_no_pool" });
+      }
+      aiResponse = await getChatResponse(
+        chatMessages,
+        songContext,
+        curatorIntent
+      );
+    }
+
+    const playlistPayload = aiResponse.playlist as
+      | { name?: string; songs?: unknown[] }
+      | undefined;
+    const playlistSongs = playlistPayload?.songs;
+    if (
+      aiResponse.type === "playlist" &&
+      Array.isArray(playlistSongs) &&
+      playlistSongs.length > 0
+    ) {
+      carveDebugServer("api.chat.selection.tracks", {
+        step: "Playlist returned to client (order = play order)",
+        playlistName: playlistPayload?.name ?? null,
+        ...playlistSongsForDebugLog(
+          playlistSongs as {
+            title: string;
+            artist: string;
+            year?: string;
+            reason?: string;
+          }[]
+        ),
+      });
+    }
+
+    carveDebugServer("api.chat.response", {
+      step: "Returning JSON to client",
+      type: aiResponse.type,
+      hasPlaylist: Boolean(aiResponse.playlist),
+      songCount: Array.isArray(playlistSongs) ? playlistSongs.length : 0,
+    });
 
     return NextResponse.json(aiResponse);
   } catch (error) {

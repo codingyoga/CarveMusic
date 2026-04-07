@@ -97,13 +97,19 @@ export async function multiSearchJioSaavn(
 
 export function formatSongsForContext(
   songs: JioSaavnSong[],
-  isArtistQuery = false
+  isArtistQuery = false,
+  strictIndexMode = false
 ): string {
   if (songs.length === 0) return "";
 
-  const header = isArtistQuery
-    ? "VERIFIED SONGS FROM THIS ARTIST'S FILMS (album = movie name). ONLY recommend songs from this list:\n"
-    : "";
+  let header = "";
+  if (isArtistQuery) {
+    header =
+      "VERIFIED SONGS FROM THIS ARTIST'S FILMS (album = movie name). ONLY recommend songs from this list:\n";
+  }
+  if (strictIndexMode) {
+    header += `NUMBERED CATALOG (${songs.length} tracks): select ONLY by index 1–${songs.length} in JSON "picks" — do not invent titles.\n`;
+  }
 
   const list = songs
     .map(

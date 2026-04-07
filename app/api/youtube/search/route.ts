@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { carveDebugServer } from "@/lib/carveDebugLogFile";
 import { searchYouTube } from "@/lib/youtube";
 
 export async function POST(req: NextRequest) {
@@ -12,12 +13,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    carveDebugServer("api.youtube.search.start", {
+      step: "POST /api/youtube/search",
+      songCount: songs.length,
+      provider: "YouTube Data API v3",
+    });
+
     const results = await Promise.all(
       songs.map(async (song: { title: string; artist: string }) => {
         const videoId = await searchYouTube(song.title, song.artist);
         return { ...song, videoId };
       })
     );
+
+    const resolved = results.filter((s) => Boolean(s.videoId)).length;
+    carveDebugServer("api.youtube.search.done", {
+      resolvedVideoIds: resolved,
+      unresolved: songs.length - resolved,
+    });
 
     return NextResponse.json({ songs: results });
   } catch (error) {

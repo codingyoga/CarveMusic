@@ -17,6 +17,7 @@ export default function Home() {
     currentPlaylist,
     shouldPlay,
     sendMessage,
+    removeSongFromCurrentPlaylist,
     startConversation,
     clearShouldPlay,
   } = useChat();
@@ -32,6 +33,7 @@ export default function Home() {
     prev,
     onTrackEnd,
     jumpTo,
+    removeSongAt,
   } = usePlayer();
 
   const { savedPlaylists, savePlaylist, deletePlaylist, isPlaylistSaved } =
@@ -71,10 +73,11 @@ export default function Home() {
   );
 
   const handleRemoveSong = useCallback(
-    (index: number, title: string, artist: string) => {
-      sendMessage(`[REMOVE] Remove "${title}" by ${artist} from the playlist`);
+    (index: number) => {
+      removeSongFromCurrentPlaylist(index);
+      removeSongAt(index);
     },
-    [sendMessage]
+    [removeSongFromCurrentPlaylist, removeSongAt]
   );
 
   const handleSave = useCallback(() => {

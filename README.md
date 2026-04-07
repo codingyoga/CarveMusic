@@ -26,11 +26,36 @@ It doesn't give you the same 10 popular songs every app does. It digs deeper.
 
 ### Stack
 
-- Next.js 14 (App Router, TypeScript)
-- Google Gemini API with Google Search grounding
-- JioSaavn unofficial API for verified song data
-- YouTube IFrame Player for playback
+- Next.js 16 (App Router, TypeScript)
+- Google Gemini API (JSON responses; strict pool uses index-picking without Search grounding on that path)
+- JioSaavn unofficial API for verified song data (multi-query search + deduped pool)
+- YouTube Data API + IFrame Player for playback
+- Vitest for unit tests
 - Tailwind CSS, dark theme
+
+### Architecture (what we chose and why)
+
+**High-level flow**
+
+1. The client sends chat history to `POST /api/chat`.
+2. The server decides whether to **search JioSaavn** (skip for very short or MCQ-style messages).
+3. **Artist vs mood routing:** `extractArtistName()` applies regex patterns, then **guardrails** so we do not treat vibe phrases as artists:
+   - `isScenarioOnlyArtistFalsePositive` (e.g. “longdrive” scenario words)
+   - `isLikelyMoodDescriptorNotArtist` (e.g. “slow kannada acoustic”)
+   - `isLikelyEraOrDecadeNotArtist` (e.g. “90s kannada”, “2000s hindi”) while still allowing “Artist Name 90s”
+4. **JioSaavn:** artist path uses focused queries; mood path uses **`buildMoodSearchQueries()`** — several queries merged into one deduped list (language, vibes, structured boosts, **decade-specific** `"{lang} {decade} songs"` when the user names eras). Pool is **capped** (`MAX_POOL_SONGS`, see `lib/songPoolPlaylist.ts`).
+5. **Gemini:**
+   - **Strict pool mode** (when the pool is large enough): the model receives a **numbered catalog** and must return JSON with **`picks: [{ index, reason }]`** only — titles come from JioSaavn, reducing hallucinations. `mapStrictPicksToResponse()` maps indices to songs; a **repair** call runs if the first parse does not yield enough valid picks.
+   - **Soft mode** (small or empty pool, or strict mapping failure): the model gets formatted song context as text and may return a normal `playlist.songs` shape.
+6. **Curator intent:** `buildCuratorIntentSection()` injects a system-prompt block derived from the last user message (language, scenario vibes, **decade line** via `formatDecadeHintsForCurator`, remaining hints). **`listeningStructuredIntent`** adds a parsed block for **mood-vs-music contrast**, introspective listening, themes, and **playlist arc** (ordering hints + optional strict-pool sequencing note in `lib/ai.ts`).
+7. **Logging:** `carveDebugServer` (`lib/carveDebugLogFile.ts`) writes to **`CARVEMUSIC_LOG_FILE`** unconditionally when set; notable tags include **`api.chat.pool.tracks`** (full capped pool, 1-based indices) and **`api.chat.selection.tracks`** (final playlist order and reasons).
+
+**Why this architecture**
+
+- **Strict index picking** ties recommendations to a real catalog and avoids invented track names when the pool is good.
+- **Rule-based intent** (no extra LLM call) keeps latency and cost down while encoding contrast, era, and anti–false-artist behavior.
+- **Multi-query JioSaavn** improves recall vs a single generic search string.
+- **File logs** make production and local debugging traceable without relying only on the terminal.
 
 ### Setup
 
@@ -47,8 +72,20 @@ GEMINI_API_KEY=your-key-from-aistudio.google.com
 YOUTUBE_API_KEY=your-youtube-data-api-key
 ```
 
+Optional — **append every server flow step to a file** (JioSaavn queries, pool size, strict vs soft Gemini path, each Gemini call timing). Look for **`api.chat.pool.tracks`** (full capped pool with titles/artists) and **`api.chat.selection.tracks`** (final playlist order + reasons):
+
+```
+CARVEMUSIC_LOG_FILE=logs/flow.log
+```
+
+The `logs/` folder is gitignored. Lines look like `[CarveMusic 2026-04-07T…] api.chat.request {"step":"POST /api/chat",…}`. For noisy **terminal** logs in dev, add `CARVEMUSIC_DEBUG=1`.
+
 ```bash
 npm run dev
+```
+
+```bash
+npm run verify   # unit tests + production build (CI-style gate)
 ```
 
 Open `http://localhost:3000`.

@@ -9,7 +9,7 @@ interface MessageProps {
   onMCQSelect?: (option: string) => void;
   onPlayAll?: () => void;
   onPlaySong?: (index: number) => void;
-  onRemoveSong?: (index: number, title: string, artist: string) => void;
+  onRemoveSong?: (index: number) => void;
   onSave?: () => void;
   isSaved?: boolean;
   isLatest?: boolean;
