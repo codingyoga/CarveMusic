@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CarveMusic
 
-## Getting Started
+**Tell it how you feel. It builds the playlist.**
 
-First, run the development server:
+CarveMusic is a chat-based playlist curator. Instead of searching for songs, you describe your mood — "I feel like driving on an empty highway at night" — and the AI builds a playlist of songs you'd never find on your own.
+
+It doesn't give you the same 10 popular songs every app does. It digs deeper.
+
+---
+
+### How it works
+
+1. You chat with the AI about your mood (or pick from quick MCQ buttons)
+2. It searches the web and a real music database to find songs that actually exist
+3. It sequences them into an emotional arc — not a random list, a journey
+4. You refine through conversation: "remove track 3", "more like track 5", "too slow"
+5. Hit play — songs stream via YouTube right in the app
+
+### What makes it different
+
+- **Mood, not keywords.** You can't type "balcony chai rainy evening" into Spotify. You can here.
+- **Real songs, not hallucinated ones.** Gemini + Google Search grounding + JioSaavn data means the AI recommends songs that actually exist with correct titles and artists.
+- **Hidden gems over obvious hits.** It prefers the beautiful song from the movie nobody saw over the one everyone already knows.
+- **Regional music that works.** Kannada, Hindi, Tamil, Telugu — not just English and Bollywood top 40.
+- **Thread following.** "That composer also scored this obscure 1993 film — track 4 is exactly what you need."
+
+### Stack
+
+- Next.js 14 (App Router, TypeScript)
+- Google Gemini API with Google Search grounding
+- JioSaavn unofficial API for verified song data
+- YouTube IFrame Player for playback
+- Tailwind CSS, dark theme
+
+### Setup
+
+```bash
+git clone https://github.com/codingyoga/CarveMusic.git
+cd CarveMusic
+npm install
+```
+
+Create `.env.local`:
+
+```
+GEMINI_API_KEY=your-key-from-aistudio.google.com
+YOUTUBE_API_KEY=your-youtube-data-api-key
+```
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Get API keys
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Gemini**: [Google AI Studio](https://aistudio.google.com/apikey) — free tier is generous
+- **YouTube Data API**: [Google Cloud Console](https://console.cloud.google.com/) — enable YouTube Data API v3, create an API key
 
-## Learn More
+### Screenshots
 
-To learn more about Next.js, take a look at the following resources:
+<p align="center">
+  <img src="public/screenshots/landing.png" width="260" alt="Mood selection" />
+  &nbsp;&nbsp;
+  <img src="public/screenshots/mood-flow.png" width="260" alt="Conversational mood flow" />
+  &nbsp;&nbsp;
+  <img src="public/screenshots/playlist.png" width="260" alt="Generated playlist with player" />
+</p>
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+<p align="center">
+  <em>Left:</em> Pick your mood with quick buttons &nbsp;|&nbsp;
+  <em>Center:</em> Conversational flow to refine &nbsp;|&nbsp;
+  <em>Right:</em> AI-curated playlist with YouTube playback
+</p>
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Built because every music app recommends the same songs and none of them let you just *talk* about how you feel.

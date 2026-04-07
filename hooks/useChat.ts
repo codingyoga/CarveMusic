@@ -1,13 +1,43 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { ChatMessage, AIResponse, Playlist } from "@/lib/types";
+
+function summarizeForHistory(m: ChatMessage): { role: string; content: string } {
+  if (m.role === "user") {
+    return { role: m.role, content: m.content };
+  }
+
+  const p = m.parsed;
+  if (!p) return { role: m.role, content: m.content };
+
+  if (p.type === "playlist" && p.playlist) {
+    const songList = p.playlist.songs
+      .map((s) => `"${s.title}" by ${s.artist}`)
+      .join(", ");
+    return {
+      role: m.role,
+      content: JSON.stringify({
+        message: p.message,
+        type: "playlist",
+        playlist: { name: p.playlist.name, songs_summary: songList },
+      }),
+    };
+  }
+
+  return {
+    role: m.role,
+    content: JSON.stringify({ message: p.message, type: p.type, options: p.options }),
+  };
+}
 
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPlaylist, setCurrentPlaylist] = useState<Playlist | null>(null);
   const [shouldPlay, setShouldPlay] = useState(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -21,13 +51,7 @@ export function useChat() {
       setIsLoading(true);
 
       try {
-        const history = [...messages, userMsg].map((m) => ({
-          role: m.role,
-          content:
-            m.role === "assistant" && m.parsed
-              ? JSON.stringify(m.parsed)
-              : m.content,
-        }));
+        const history = [...messagesRef.current, userMsg].map(summarizeForHistory);
 
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -35,9 +59,13 @@ export function useChat() {
           body: JSON.stringify({ messages: history }),
         });
 
-        if (!res.ok) throw new Error("Chat request failed");
+        if (!res.ok) throw new Error(`Chat request failed: ${res.status}`);
 
         const parsed: AIResponse = await res.json();
+
+        if (!parsed || !parsed.message) {
+          throw new Error("Invalid response format");
+        }
 
         const assistantMsg: ChatMessage = {
           id: (Date.now() + 1).toString(),
@@ -72,7 +100,7 @@ export function useChat() {
         setIsLoading(false);
       }
     },
-    [messages]
+    []
   );
 
   const startConversation = useCallback(async () => {
