@@ -16,6 +16,8 @@ import {
   isLikelyMoodDescriptorNotArtist,
   isScenarioOnlyArtistFalsePositive,
 } from "@/lib/moodSearchQuery";
+import { inferSearchIntent } from "@/lib/searchIntent";
+import { buildJioSaavnQueriesFromIntent } from "@/lib/jiosaavnQueriesFromIntent";
 import type { JioSaavnSong } from "@/lib/jiosaavn";
 import {
   capSongPool,
@@ -128,8 +130,22 @@ export async function POST(req: NextRequest) {
 
     const lastMsg = chatMessages[chatMessages.length - 1];
     if (lastMsg && shouldSearch(lastMsg.content)) {
-      const artistName = extractArtistName(lastMsg.content);
-      const lang = detectLanguage(chatMessages);
+      const lang = detectLanguage(chatMessages) as
+        | "kannada"
+        | "hindi"
+        | "tamil"
+        | "telugu"
+        | "english"
+        | null;
+      const inferred = await inferSearchIntent({
+        lastUserText: lastMsg.content,
+        languageHint: lang,
+      });
+
+      const artistName =
+        inferred?.isArtistRequest && inferred.artistName
+          ? inferred.artistName
+          : extractArtistName(lastMsg.content);
 
       if (artistName) {
         isArtistPath = true;
@@ -153,9 +169,10 @@ export async function POST(req: NextRequest) {
           poolSize: poolSongs.length,
         });
       } else {
-        let moodQueries = buildMoodSearchQueries(chatMessages, (s) =>
-          MCQ_OPTIONS.has(s)
-        );
+        let moodQueries =
+          inferred && !inferred.isArtistRequest
+            ? buildJioSaavnQueriesFromIntent(inferred, lastMsg.content)
+            : buildMoodSearchQueries(chatMessages, (s) => MCQ_OPTIONS.has(s));
         if (moodQueries.length === 0) {
           const one = buildMoodSearchQuery(chatMessages, (s) =>
             MCQ_OPTIONS.has(s)
