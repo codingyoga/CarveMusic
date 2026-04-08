@@ -34,7 +34,9 @@ export default function ChatWindow({
   }, [messages]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-8 space-y-1 relative">
+    <div
+      className="chat-scroll flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-4 py-8 space-y-1 relative"
+    >
       <div className="mood-glow" />
 
       {messages.length === 0 && (

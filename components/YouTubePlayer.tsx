@@ -83,6 +83,8 @@ export default function YouTubePlayer({
         controls: 0,
         modestbranding: 1,
         rel: 0,
+        /** iOS Safari: required for inline embed playback */
+        playsinline: 1,
       },
       events: {
         onStateChange: (event: YT.OnStateChangeEvent) => {
@@ -123,8 +125,14 @@ export default function YouTubePlayer({
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-[var(--background)]/95 backdrop-blur-xl border-t border-[var(--border)] z-50">
-      <div className="max-w-2xl mx-auto flex items-center gap-4 px-4 py-3">
+    <div
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-[var(--background)]/95 backdrop-blur-xl
+        pb-[env(safe-area-inset-bottom,0px)]"
+    >
+      <div
+        className="mx-auto flex max-w-2xl items-center gap-2 px-3 py-3 touch-manipulation sm:gap-4 sm:px-4
+          pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]"
+      >
         <div
           ref={containerRef}
           className="w-[80px] h-[45px] rounded-lg overflow-hidden shrink-0 bg-[var(--surface)] border border-[var(--border)]"

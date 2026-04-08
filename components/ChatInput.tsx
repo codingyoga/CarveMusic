@@ -39,7 +39,7 @@ export default function ChatInput({
           placeholder={placeholder}
           disabled={disabled}
           className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-2xl
-            px-5 py-3.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)]
+            px-5 py-3.5 text-base text-[var(--foreground)] placeholder:text-[var(--muted)]
             outline-none focus:border-[var(--accent-dim)] focus:ring-1
             focus:ring-[var(--accent)]/20 transition-all duration-300
             disabled:opacity-40"
