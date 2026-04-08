@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Playlist, Song } from "@/lib/types";
 import { carveDebug } from "@/lib/carveDebugLog";
+import { playerQueueMatchesPlaylist } from "@/lib/playlistIdentity";
 
 function firstPlayableIndex(songs: Song[], start: number): number {
   for (let i = start; i < songs.length; i++) {
@@ -20,6 +21,7 @@ export function usePlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const currentIndexRef = useRef(0);
+  const resolveGenerationRef = useRef(0);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
@@ -35,6 +37,7 @@ export function usePlayer() {
 
   const resolveAndPlay = useCallback(
     async (playlist: Playlist, startIndex: number = 0) => {
+      const generation = ++resolveGenerationRef.current;
       setIsResolving(true);
 
       try {
@@ -53,6 +56,10 @@ export function usePlayer() {
 
         const data = await res.json();
         const all: Song[] = data.songs;
+
+        if (generation !== resolveGenerationRef.current) {
+          return;
+        }
 
         const resolved = all.filter((s) => s.videoId).length;
         carveDebug("client.youtube.response", {
@@ -77,7 +84,9 @@ export function usePlayer() {
       } catch (error) {
         console.error("Failed to resolve songs:", error);
       } finally {
-        setIsResolving(false);
+        if (generation === resolveGenerationRef.current) {
+          setIsResolving(false);
+        }
       }
     },
     []
@@ -127,6 +136,21 @@ export function usePlayer() {
     [songs]
   );
 
+  /**
+   * Play a row from `playlist`: jump in-queue if this playlist is already resolved,
+   * otherwise resolve from YouTube (avoids wrong audio after a new chat playlist).
+   */
+  const playSongAt = useCallback(
+    (playlist: Playlist, index: number) => {
+      if (playerQueueMatchesPlaylist(songs, playlist)) {
+        jumpTo(index);
+      } else {
+        void resolveAndPlay(playlist, index);
+      }
+    },
+    [songs, jumpTo, resolveAndPlay]
+  );
+
   /** Removes track at index; indices align with playlist rows (including rows without videoId). */
   const removeSongAt = useCallback((index: number) => {
     setSongs((prev) => {
@@ -159,6 +183,7 @@ export function usePlayer() {
     isPlaying,
     isResolving,
     resolveAndPlay,
+    playSongAt,
     playPause,
     next,
     prev,

@@ -62,8 +62,8 @@ export default function Message({
         {hasPlaylist && (
           <PlaylistCard
             playlist={parsed!.playlist!}
-            currentIndex={currentTrackIndex}
-            isPlaying={isPlaying}
+            currentIndex={isLatest ? currentTrackIndex : -1}
+            isPlaying={isLatest ? isPlaying : false}
             onPlayAll={isLatest ? onPlayAll : undefined}
             onPlaySong={isLatest ? onPlaySong : undefined}
             onRemoveSong={isLatest ? onRemoveSong : undefined}

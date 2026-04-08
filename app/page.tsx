@@ -28,11 +28,11 @@ export default function Home() {
     isPlaying,
     isResolving,
     resolveAndPlay,
+    playSongAt,
     playPause,
     next,
     prev,
     onTrackEnd,
-    jumpTo,
     removeSongAt,
   } = usePlayer();
 
@@ -63,13 +63,9 @@ export default function Home() {
 
   const handlePlaySong = useCallback(
     (index: number) => {
-      if (songs.length > 0) {
-        jumpTo(index);
-      } else if (currentPlaylist) {
-        resolveAndPlay(currentPlaylist, index);
-      }
+      if (currentPlaylist) playSongAt(currentPlaylist, index);
     },
-    [songs.length, currentPlaylist, resolveAndPlay, jumpTo]
+    [currentPlaylist, playSongAt]
   );
 
   const handleRemoveSong = useCallback(

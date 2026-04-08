@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getChatResponse, getChatResponseFromPool } from "@/lib/ai";
 import {
   playlistSongsForDebugLog,
@@ -21,6 +21,17 @@ import {
   capSongPool,
   MIN_POOL_FOR_STRICT,
 } from "@/lib/songPoolPlaylist";
+
+function flushLangfuseAfterResponse() {
+  after(async () => {
+    try {
+      const { langfuseSpanProcessor } = await import("../../../instrumentation");
+      await langfuseSpanProcessor?.forceFlush();
+    } catch {
+      /* instrumentation optional in some environments */
+    }
+  });
+}
 
 const MCQ_OPTIONS = new Set([
   "start",
@@ -271,6 +282,7 @@ export async function POST(req: NextRequest) {
       songCount: Array.isArray(playlistSongs) ? playlistSongs.length : 0,
     });
 
+    flushLangfuseAfterResponse();
     return NextResponse.json(aiResponse);
   } catch (error) {
     console.error("Chat API error:", error);
@@ -278,6 +290,7 @@ export async function POST(req: NextRequest) {
       error instanceof Error &&
       (error.message.includes("429") || error.message.includes("RESOURCE_EXHAUSTED"));
     if (isRateLimit) {
+      flushLangfuseAfterResponse();
       return NextResponse.json(
         {
           message:
@@ -287,6 +300,7 @@ export async function POST(req: NextRequest) {
         { status: 200 }
       );
     }
+    flushLangfuseAfterResponse();
     return NextResponse.json(
       { error: "Failed to get AI response" },
       { status: 500 }

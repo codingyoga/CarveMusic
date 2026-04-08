@@ -12,6 +12,7 @@ import {
   strictPoolSequencingNote,
 } from "@/lib/listeningStructuredIntent";
 import type { AIResponse } from "@/lib/types";
+import { traceGeminiGenerateContent } from "@/lib/langfuseGemini";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -223,16 +224,25 @@ async function callGemini(
   model: string,
   contents: { role: "model" | "user"; parts: { text: string }[] }[],
   systemPrompt: string,
-  temperature: number
+  temperature: number,
+  observationName: string
 ) {
-  return ai.models.generateContent({
+  return traceGeminiGenerateContent({
+    observationName,
     model,
-    contents,
-    config: {
-      systemInstruction: systemPrompt,
-      responseMimeType: "application/json",
-      temperature,
-    },
+    temperature,
+    contentsTurns: contents.length,
+    systemPromptChars: systemPrompt.length,
+    run: () =>
+      ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: "application/json",
+          temperature,
+        },
+      }),
   });
 }
 
@@ -302,7 +312,13 @@ export async function getChatResponseFromPool(
   for (const model of MODELS) {
     try {
       const t0 = Date.now();
-      const response = await callGemini(model, contents, systemPrompt, 0.38);
+      const response = await callGemini(
+        model,
+        contents,
+        systemPrompt,
+        0.38,
+        "strict_pool"
+      );
       const ms = Date.now() - t0;
       let parsed = parseJsonResponse(response.text || "");
       carveDebugServer("gemini.done", { model, ms, mode: "strict_pool" });
@@ -329,7 +345,8 @@ export async function getChatResponseFromPool(
         model,
         [{ role: "user", parts: [{ text: repairUser }] }],
         repairSystem,
-        0.22
+        0.22,
+        "strict_pool_repair"
       );
       carveDebugServer("gemini.done", {
         model,
@@ -400,7 +417,13 @@ export async function getChatResponse(
   for (const model of MODELS) {
     try {
       const t0 = Date.now();
-      const response = await callGemini(model, contents, systemPrompt, softTemp);
+      const response = await callGemini(
+        model,
+        contents,
+        systemPrompt,
+        softTemp,
+        "soft_chat"
+      );
       const ms = Date.now() - t0;
       const text = response.text || "";
       carveDebugServer("gemini.done", {
