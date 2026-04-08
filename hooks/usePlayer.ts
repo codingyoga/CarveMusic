@@ -20,6 +20,7 @@ export function usePlayer() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const currentIndexRef = useRef(0);
   const resolveGenerationRef = useRef(0);
 
@@ -39,6 +40,7 @@ export function usePlayer() {
     async (playlist: Playlist, startIndex: number = 0) => {
       const generation = ++resolveGenerationRef.current;
       setIsResolving(true);
+      setResolveError(null);
 
       try {
         carveDebug("client.youtube.resolve", {
@@ -51,8 +53,6 @@ export function usePlayer() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ songs: playlist.songs }),
         });
-
-        if (!res.ok) throw new Error("YouTube search failed");
 
         const data = await res.json();
         const all: Song[] = data.songs;
@@ -69,7 +69,15 @@ export function usePlayer() {
 
         const anyPlayable = all.some((s: Song) => s.videoId);
         if (!anyPlayable) {
-          console.error("No songs found on YouTube");
+          if (!res.ok) {
+            const msg =
+              data?.error === "YouTube quota exceeded"
+                ? "YouTube quota exceeded (try later or use a fresh API key)."
+                : "YouTube lookup failed.";
+            setResolveError(msg);
+          } else {
+            setResolveError("No playable YouTube videos found for this playlist.");
+          }
           return;
         }
 
@@ -83,6 +91,7 @@ export function usePlayer() {
         setIsPlaying(true);
       } catch (error) {
         console.error("Failed to resolve songs:", error);
+        setResolveError("YouTube lookup failed.");
       } finally {
         if (generation === resolveGenerationRef.current) {
           setIsResolving(false);
@@ -182,6 +191,7 @@ export function usePlayer() {
     currentIndex,
     isPlaying,
     isResolving,
+    resolveError,
     resolveAndPlay,
     playSongAt,
     playPause,

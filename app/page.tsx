@@ -18,7 +18,6 @@ export default function Home() {
     shouldPlay,
     sendMessage,
     removeSongFromCurrentPlaylist,
-    startConversation,
     clearShouldPlay,
   } = useChat();
 
@@ -27,6 +26,7 @@ export default function Home() {
     currentIndex,
     isPlaying,
     isResolving,
+    resolveError,
     resolveAndPlay,
     playSongAt,
     playPause,
@@ -40,10 +40,6 @@ export default function Home() {
     useSavedPlaylists();
 
   const [showSaved, setShowSaved] = useState(false);
-
-  useEffect(() => {
-    startConversation();
-  }, [startConversation]);
 
   useEffect(() => {
     if (shouldPlay && currentPlaylist) {
@@ -176,6 +172,14 @@ export default function Home() {
               <span className="text-xs ml-2 text-[var(--muted)]">
                 {isResolving ? "Finding songs on YouTube..." : "Curating..."}
               </span>
+            </div>
+          </div>
+        )}
+
+        {resolveError && (
+          <div className="px-4 pb-3">
+            <div className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+              {resolveError}
             </div>
           </div>
         )}

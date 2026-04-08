@@ -131,6 +131,17 @@ describe("buildMoodSearchQueries", () => {
       true
     );
   });
+
+  it("does not misclassify nostalgic as an artist", () => {
+    expect(isLikelyMoodDescriptorNotArtist("nostalgic")).toBe(true);
+    expect(isLikelyMoodDescriptorNotArtist("kannada nostalgic")).toBe(true);
+  });
+
+  it("does not misclassify love/romance as an artist", () => {
+    expect(isLikelyMoodDescriptorNotArtist("love")).toBe(true);
+    expect(isLikelyMoodDescriptorNotArtist("romance")).toBe(true);
+    expect(isLikelyMoodDescriptorNotArtist("kannada love")).toBe(true);
+  });
 });
 
 describe("buildMoodSearchQuery", () => {

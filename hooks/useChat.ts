@@ -17,8 +17,22 @@ function lastAssistantPlaylistMessage(
   return undefined;
 }
 
+const WELCOME_TEXT =
+  "Hey! What are we listening to today? A mood, an artist, a memory — tell me anything.";
+
+/** Stable id + same initial tree on server and client (avoids hydration mismatch from useEffect seeding). */
+const INITIAL_GREETING: ChatMessage = {
+  id: "carve-welcome",
+  role: "assistant",
+  content: WELCOME_TEXT,
+  parsed: {
+    message: WELCOME_TEXT,
+    type: "text",
+  },
+};
+
 export function useChat() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_GREETING]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPlaylist, setCurrentPlaylist] = useState<Playlist | null>(null);
   const [shouldPlay, setShouldPlay] = useState(false);
@@ -144,18 +158,7 @@ export function useChat() {
   }, []);
 
   const startConversation = useCallback(() => {
-    const greeting: ChatMessage = {
-      id: Date.now().toString(),
-      role: "assistant",
-      content:
-        "Hey! What are we listening to today? A mood, an artist, a memory — tell me anything.",
-      parsed: {
-        message:
-          "Hey! What are we listening to today? A mood, an artist, a memory — tell me anything.",
-        type: "text",
-      },
-    };
-    setMessages([greeting]);
+    setMessages([INITIAL_GREETING]);
   }, []);
 
   const clearShouldPlay = useCallback(() => setShouldPlay(false), []);

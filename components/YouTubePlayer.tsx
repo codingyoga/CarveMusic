@@ -30,8 +30,12 @@ export default function YouTubePlayer({
   onPrev,
 }: YouTubePlayerProps) {
   const playerRef = useRef<YT.Player | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
   const containerRef = useRef<HTMLDivElement>(null);
   const [apiReady, setApiReady] = useState(false);
+  /** Bumps when iframe fires onReady so we retry play/pause sync (fixes first paint before getPlayerState exists). */
+  const [playerReadyTick, setPlayerReadyTick] = useState(0);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
@@ -65,12 +69,31 @@ export default function YouTubePlayer({
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
 
+  const trySyncPlayPause = useCallback(() => {
+    const p = playerRef.current;
+    if (!p?.getPlayerState) return;
+    try {
+      const state = p.getPlayerState();
+      if (isPlayingRef.current && state !== window.YT.PlayerState.PLAYING) {
+        p.playVideo();
+      } else if (!isPlayingRef.current && state === window.YT.PlayerState.PLAYING) {
+        p.pauseVideo();
+      }
+    } catch {
+      /* iframe not ready */
+    }
+  }, []);
+
   useEffect(() => {
     if (!apiReady || !songs[currentIndex]?.videoId) return;
 
     if (playerRef.current) {
       playerRef.current.loadVideoById(songs[currentIndex].videoId!);
       setCurrentTime(0);
+      queueMicrotask(() => {
+        trySyncPlayPause();
+        setTimeout(trySyncPlayPause, 150);
+      });
       return;
     }
 
@@ -87,6 +110,10 @@ export default function YouTubePlayer({
         playsinline: 1,
       },
       events: {
+        onReady: () => {
+          setPlayerReadyTick((t) => t + 1);
+          trySyncPlayPause();
+        },
         onStateChange: (event: YT.OnStateChangeEvent) => {
           if (event.data === window.YT.PlayerState.ENDED) {
             onTrackEnd();
@@ -101,17 +128,11 @@ export default function YouTubePlayer({
     });
 
     return () => stopTimer();
-  }, [apiReady, currentIndex, songs, onTrackEnd, startTimer, stopTimer]);
+  }, [apiReady, currentIndex, songs, onTrackEnd, startTimer, stopTimer, trySyncPlayPause]);
 
   useEffect(() => {
-    if (!playerRef.current?.getPlayerState) return;
-    const state = playerRef.current.getPlayerState();
-    if (isPlaying && state !== window.YT.PlayerState.PLAYING) {
-      playerRef.current.playVideo();
-    } else if (!isPlaying && state === window.YT.PlayerState.PLAYING) {
-      playerRef.current.pauseVideo();
-    }
-  }, [isPlaying]);
+    trySyncPlayPause();
+  }, [isPlaying, currentIndex, playerReadyTick, trySyncPlayPause]);
 
   const currentSong = songs[currentIndex];
   if (!currentSong) return null;

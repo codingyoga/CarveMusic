@@ -19,18 +19,40 @@ export async function POST(req: NextRequest) {
       provider: "YouTube Data API v3",
     });
 
-    const results = await Promise.all(
-      songs.map(async (song: { title: string; artist: string }) => {
+    const results: Array<{ title: string; artist: string; videoId: string | null }> =
+      [];
+    let quotaExceeded = false;
+
+    // Sequential to reduce quota spikes and allow early bail-out.
+    for (const song of songs as Array<{ title: string; artist: string }>) {
+      if (quotaExceeded) {
+        results.push({ ...song, videoId: null });
+        continue;
+      }
+      try {
         const videoId = await searchYouTube(song.title, song.artist);
-        return { ...song, videoId };
-      })
-    );
+        results.push({ ...song, videoId });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg === "YOUTUBE_QUOTA_EXCEEDED") {
+          quotaExceeded = true;
+        }
+        results.push({ ...song, videoId: null });
+      }
+    }
 
     const resolved = results.filter((s) => Boolean(s.videoId)).length;
     carveDebugServer("api.youtube.search.done", {
       resolvedVideoIds: resolved,
       unresolved: songs.length - resolved,
     });
+
+    if (quotaExceeded) {
+      return NextResponse.json(
+        { error: "YouTube quota exceeded", songs: results },
+        { status: 429 }
+      );
+    }
 
     return NextResponse.json({ songs: results });
   } catch (error) {
