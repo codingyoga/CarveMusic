@@ -19,7 +19,8 @@ export type SearchIntent = {
   vibes: string[];
 };
 
-const MODEL = "gemini-2.0-flash";
+// Use a model that is available broadly in Gemini API.
+const MODEL = "gemini-2.5-flash";
 
 function safeJsonParse(s: string): unknown | null {
   try {
@@ -109,6 +110,7 @@ Schema:
 Rules:
 - If the user asks for an artist/person's songs (\"X songs\", \"songs by X\"), set isArtistRequest=true and artistName="X".
 - Do NOT treat mood/genre words (nostalgic, love, pop, romantic, hits) as an artist name.
+- Emotional imperatives are MOOD requests, not song titles: e.g. \"make me happy\", \"cheer me up\", \"something happy\", \"put me in a good mood\" → isArtistRequest=false and put vibes like [\"happy\",\"upbeat\",\"uplifting\",\"feel good\"] (pick a few). Do NOT leave vibes empty for these.
 - If the user specifies a decade/era, populate decade.
 - Use the languageHint if the user didn't specify language explicitly.`;
 

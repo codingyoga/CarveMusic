@@ -1,5 +1,8 @@
 import type { SearchIntent, SearchLanguage } from "@/lib/searchIntent";
-import { parseDecadeHintsForSearch } from "@/lib/moodSearchQuery";
+import {
+  expandMoodImperativeVibes,
+  parseDecadeHintsForSearch,
+} from "@/lib/moodSearchQuery";
 
 function normalizeDecade(d: string): string | null {
   const s = d.trim();
@@ -25,12 +28,18 @@ export function buildJioSaavnQueriesFromIntent(
   fallbackText: string
 ): string[] {
   const lang = intent.language;
+  const imperative = expandMoodImperativeVibes(fallbackText);
   const decade =
     (intent.decade && normalizeDecade(intent.decade)) ||
     (parseDecadeHintsForSearch(fallbackText)[0] ?? null);
 
   const genres = intent.genres.map((g) => g.toLowerCase()).slice(0, 2);
-  const vibes = intent.vibes.map((v) => v.toLowerCase()).slice(0, 2);
+  const vibes = [
+    ...new Set([
+      ...intent.vibes.map((v) => v.toLowerCase()),
+      ...imperative.vibes.map((v) => v.toLowerCase()),
+    ]),
+  ].slice(0, 4);
 
   const q = new Set<string>();
 
@@ -61,12 +70,14 @@ export function buildJioSaavnQueriesFromIntent(
   }
 
   // Last resort: add the raw text with lang prefix, but keep it late.
+  // Skip when the message is an emotional imperative (e.g. "make me happy") — that
+  // becomes literal title search on catalogs, not mood retrieval.
   const cleanedFallback = fallbackText
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (cleanedFallback.length > 5) {
+  if (cleanedFallback.length > 5 && imperative.vibes.length === 0) {
     q.add(withLang(lang, cleanedFallback));
   }
 

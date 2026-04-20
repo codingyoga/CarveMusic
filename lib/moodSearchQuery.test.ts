@@ -3,6 +3,7 @@ import {
   buildMoodSearchQueries,
   buildMoodSearchQuery,
   detectLanguage,
+  expandMoodImperativeVibes,
   expandScenarioVibes,
   formatDecadeHintsForCurator,
   isLikelyEraOrDecadeNotArtist,
@@ -12,6 +13,32 @@ import {
 } from "./moodSearchQuery";
 
 const neverMcq = () => false;
+
+describe("expandMoodImperativeVibes", () => {
+  it("maps make me happy to upbeat vibes and strips the phrase", () => {
+    const { vibes, stripped } = expandMoodImperativeVibes("make me happy");
+    expect(vibes).toContain("upbeat");
+    expect(stripped.toLowerCase()).not.toContain("make");
+    expect(stripped.toLowerCase()).not.toContain("happy");
+  });
+
+  it("handles please make me happy songs", () => {
+    const { vibes, stripped } = expandMoodImperativeVibes(
+      "please make me happy songs"
+    );
+    expect(vibes.length).toBeGreaterThan(0);
+    expect(stripped.toLowerCase()).not.toContain("make me happy");
+  });
+
+  it("does not match artist song requests", () => {
+    expect(expandMoodImperativeVibes("arijit singh romantic songs").vibes).toEqual(
+      []
+    );
+    expect(
+      expandMoodImperativeVibes("songs by sp balasubrahmanyam kannada").vibes
+    ).toEqual([]);
+  });
+});
 
 describe("expandScenarioVibes", () => {
   it("maps long drive to vibe tokens and strips scenario words", () => {
@@ -142,6 +169,11 @@ describe("buildMoodSearchQueries", () => {
     expect(isLikelyMoodDescriptorNotArtist("romance")).toBe(true);
     expect(isLikelyMoodDescriptorNotArtist("kannada love")).toBe(true);
   });
+
+  it("does not misclassify pop as an artist", () => {
+    expect(isLikelyMoodDescriptorNotArtist("pop")).toBe(true);
+    expect(isLikelyMoodDescriptorNotArtist("english pop")).toBe(true);
+  });
 });
 
 describe("buildMoodSearchQuery", () => {
@@ -160,6 +192,13 @@ describe("buildMoodSearchQuery", () => {
     const messages = [{ role: "user" as const, content: "some chill tamil melodies" }];
     const q = buildMoodSearchQuery(messages, neverMcq);
     expect(q).toContain("tamil");
+  });
+
+  it("does not use make me happy as a literal title keyword", () => {
+    const messages = [{ role: "user" as const, content: "make me happy" }];
+    const q = buildMoodSearchQuery(messages, neverMcq);
+    expect(q.toLowerCase()).not.toContain("make me happy");
+    expect(q.toLowerCase()).toMatch(/upbeat|cheerful|feel good/);
   });
 });
 

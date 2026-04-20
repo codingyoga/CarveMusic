@@ -22,5 +22,22 @@ describe("buildJioSaavnQueriesFromIntent", () => {
     // "pop songs" as a literal phrase is a common failure mode.
     expect(queries.some((q) => q.includes("pop songs"))).toBe(false);
   });
+
+  it("does not append raw make me happy as a catalog query when intent vibes are empty", () => {
+    const intent: SearchIntent = {
+      isArtistRequest: false,
+      artistName: null,
+      language: null,
+      decade: null,
+      genres: [],
+      vibes: [],
+    };
+
+    const queries = buildJioSaavnQueriesFromIntent(intent, "make me happy");
+    expect(queries.some((q) => /make\s+me\s+happy/i.test(q))).toBe(false);
+    expect(queries.some((q) => /upbeat|cheerful|feel good/i.test(q))).toBe(
+      true
+    );
+  });
 });
 

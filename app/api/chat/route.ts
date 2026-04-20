@@ -7,11 +7,15 @@ import {
 } from "@/lib/carveDebugLog";
 import { carveDebugServer } from "@/lib/carveDebugLogFile";
 import { multiSearchJioSaavn, formatSongsForContext } from "@/lib/jiosaavn";
-import { buildCuratorIntentSection } from "@/lib/curatorIntent";
+import {
+  buildCuratorIntentSection,
+  formatCatalogSearchPreamble,
+} from "@/lib/curatorIntent";
 import {
   buildMoodSearchQueries,
   buildMoodSearchQuery,
   detectLanguage,
+  expandMoodImperativeVibes,
   isLikelyEraOrDecadeNotArtist,
   isLikelyMoodDescriptorNotArtist,
   isScenarioOnlyArtistFalsePositive,
@@ -64,6 +68,7 @@ const MCQ_OPTIONS = new Set([
 ]);
 
 function extractArtistName(text: string): string | null {
+  if (expandMoodImperativeVibes(text).vibes.length > 0) return null;
   const lower = text.toLowerCase();
   const patterns = [
     /songs?\s+(?:of|by|from)\s+(.+?)(?:\s+(?:in|from)\s+(?:kannada|hindi|tamil|telugu|english))?$/i,
@@ -127,6 +132,8 @@ export async function POST(req: NextRequest) {
 
     let poolSongs: JioSaavnSong[] = [];
     let isArtistPath = false;
+    let catalogSearchQueries: string[] = [];
+    let resolvedArtistName: string | null = null;
 
     const lastMsg = chatMessages[chatMessages.length - 1];
     if (lastMsg && shouldSearch(lastMsg.content)) {
@@ -149,6 +156,7 @@ export async function POST(req: NextRequest) {
 
       if (artistName) {
         isArtistPath = true;
+        resolvedArtistName = artistName;
         const queries = [
           artistName,
           lang ? `${artistName} ${lang}` : null,
@@ -162,6 +170,7 @@ export async function POST(req: NextRequest) {
           queries,
         });
 
+        catalogSearchQueries = queries;
         const songs = await multiSearchJioSaavn(queries);
         poolSongs = capSongPool(songs);
         carveDebugServer("api.chat.jiosaavn.result", {
@@ -181,6 +190,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (moodQueries.length > 0) {
+          catalogSearchQueries = moodQueries;
           carveDebugServer("api.chat.jiosaavn", {
             step: "JioSaavn lookup (mood / multi-query)",
             queries: moodQueries,
@@ -207,7 +217,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const curatorIntent = buildCuratorIntentSection(chatMessages);
+    const curatorIntent =
+      [
+        buildCuratorIntentSection(chatMessages),
+        formatCatalogSearchPreamble({
+          isArtistPath,
+          artistName: isArtistPath ? resolvedArtistName : null,
+          queries: catalogSearchQueries,
+        }),
+      ]
+        .filter(Boolean)
+        .join("\n") || null;
     carveDebugServer("api.chat.curatorIntent", {
       step: "Structured intent for system prompt",
       injected: Boolean(curatorIntent),

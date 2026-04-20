@@ -21,6 +21,48 @@ export function detectLanguage(
   return null;
 }
 
+/**
+ * English imperatives / emotional asks ("make me happy") describe desired *music mood*,
+ * not a literal track title to keyword-search.
+ */
+const MOOD_IMPERATIVE_PATTERNS: { pattern: RegExp; vibes: string[] }[] = [
+  {
+    pattern:
+      /\b(?:please\s+|just\s+)?make\s+me\s+happy(?:\s+songs?|\s+music|\s+tracks?)?\b/gi,
+    vibes: ["upbeat", "cheerful", "feel good"],
+  },
+  {
+    pattern:
+      /\b(?:please\s+)?cheer\s+me\s+up(?:\s+with\s+music|\s+with\s+songs?)?\b/gi,
+    vibes: ["upbeat", "uplifting", "feel good"],
+  },
+  {
+    pattern:
+      /\b(?:put|get)\s+me\s+in\s+a\s+(?:good|better|great)\s+mood\b/gi,
+    vibes: ["upbeat", "happy", "hits"],
+  },
+  {
+    pattern:
+      /\b(?:i\s+)?(?:want|need)\s+(?:some\s+)?happy\s+(?:songs?|music|tracks?|vibes?)\b/gi,
+    vibes: ["upbeat", "cheerful", "hits"],
+  },
+  {
+    pattern:
+      /\bsomething\s+happy\b|\bhappy\s+(?:songs?|music|vibes?|hits)\b|\bfeel\s+good\s+(?:songs?|music)\b/gi,
+    vibes: ["upbeat", "cheerful"],
+  },
+  {
+    pattern:
+      /\bmake\s+me\s+feel\s+better\b|\bfeel\s+better\s+with\s+(?:music|songs?)\b/gi,
+    vibes: ["uplifting", "comfort", "feel good"],
+  },
+  {
+    pattern:
+      /\bbrighten\s+my\s+day\b|\blift\s+my\s+(?:mood|spirits)\b/gi,
+    vibes: ["upbeat", "uplifting", "feel good"],
+  },
+];
+
 const SCENARIO_VIBE_PATTERNS: { pattern: RegExp; vibes: string[] }[] = [
   {
     pattern: /long\s*drive|longdrive|road\s*trip|open\s*road|highway|cruise\b/gi,
@@ -75,6 +117,7 @@ const MOOD_DESCRIPTOR_TOKENS = new Set([
   "nostalgia",
   "retro",
   "throwback",
+  "pop",
   "love",
   "romance",
   "soft",
@@ -248,6 +291,26 @@ export function expandScenarioVibes(text: string): { vibes: string[]; stripped: 
   };
 }
 
+export function expandMoodImperativeVibes(text: string): {
+  vibes: string[];
+  stripped: string;
+} {
+  let s = text;
+  const vibes: string[] = [];
+  for (const { pattern, vibes: v } of MOOD_IMPERATIVE_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(s)) {
+      pattern.lastIndex = 0;
+      vibes.push(...v);
+      s = s.replace(pattern, " ");
+    }
+  }
+  return {
+    vibes: [...new Set(vibes)],
+    stripped: s.replace(/\s+/g, " ").trim(),
+  };
+}
+
 export function buildMoodSearchQuery(
   messages: { role: string; content: string }[],
   isMcqOption: (s: string) => boolean
@@ -266,10 +329,13 @@ export function buildMoodSearchQuery(
     .replace(/^(give me|play|i want|suggest|find)\s+/i, "")
     .trim();
 
-  const { vibes, stripped } = expandScenarioVibes(cleanedLast);
-  keywords.push(...vibes);
+  const { vibes: scenarioVibes, stripped: scenarioStripped } =
+    expandScenarioVibes(cleanedLast);
+  const { vibes: imperativeVibes, stripped: imperativeStripped } =
+    expandMoodImperativeVibes(scenarioStripped);
+  keywords.push(...scenarioVibes, ...imperativeVibes);
 
-  cleanedLast = stripped
+  cleanedLast = imperativeStripped
     .replace(/\b(songs?|tracks?|playlist|music|some|give|need|want)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -312,7 +378,9 @@ export function buildMoodSearchQueries(
     [...messages].reverse().find((m) => m.role === "user")?.content?.trim() ??
     "";
   const lastUser = lastUserRaw.toLowerCase();
-  const { vibes } = expandScenarioVibes(lastUser);
+  const scen = expandScenarioVibes(lastUser);
+  const imp = expandMoodImperativeVibes(scen.stripped);
+  const vibes = [...new Set([...scen.vibes, ...imp.vibes])];
   const structured = parseListeningStructuredIntent(lastUserRaw);
   const boosts = structuredIntentSearchBoosts(lang, structured);
   const skipFilmyHits =
